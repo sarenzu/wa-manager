@@ -28,9 +28,19 @@ function saveData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 function loadConfig() {
-  if (!fs.existsSync(CONFIG_FILE)) return {};
-  try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); }
-  catch { return {}; }
+  let fileCfg = {};
+  if (fs.existsSync(CONFIG_FILE)) {
+    try { fileCfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); }
+    catch { fileCfg = {}; }
+  }
+  // Le variabili d'ambiente hanno priorità sul file (persistono su Render)
+  return {
+    ...fileCfg,
+    accessToken:   process.env.WA_ACCESS_TOKEN    || fileCfg.accessToken    || '',
+    phoneNumberId: process.env.WA_PHONE_NUMBER_ID  || fileCfg.phoneNumberId  || '',
+    wabaId:        process.env.WA_WABA_ID          || fileCfg.wabaId          || '',
+    verifyToken:   process.env.WA_VERIFY_TOKEN     || fileCfg.verifyToken     || 'myverifytoken123',
+  };
 }
 function saveConfig(cfg) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
