@@ -625,7 +625,17 @@ select { cursor: pointer; appearance: none; background-image: url("data:image/sv
       <div class="section-card" id="bc-template-section" style="display:none">
         <div class="section-title">📋 Template</div>
         <div class="form-group">
-          <label>Nome template (come approvato da Meta)</label>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <label style="margin:0">Template approvato</label>
+            <button class="btn btn-secondary" style="padding:4px 10px;font-size:12px" onclick="loadTemplates()">🔄 Aggiorna</button>
+          </div>
+          <select id="bc-template-select" onchange="onTemplateSelect(this.value)">
+            <option value="">— Seleziona o carica template —</option>
+          </select>
+          <div id="template-info" style="font-size:12px;color:var(--text3);margin-top:5px;display:none"></div>
+        </div>
+        <div class="form-group">
+          <label>Oppure inserisci manualmente il nome template</label>
           <input type="text" id="bc-template-name" placeholder="es. conferma_polizza">
         </div>
         <div class="form-group">
@@ -723,7 +733,11 @@ select { cursor: pointer; appearance: none; background-image: url("data:image/sv
           <label>Verify Token (scegli una stringa segreta)</label>
           <input type="text" id="cfg-verify" placeholder="myverifytoken123">
         </div>
-        <button class="btn btn-primary" onclick="saveConfig()">💾 Salva configurazione</button>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="saveConfig()">💾 Salva configurazione</button>
+          <button class="btn btn-secondary" id="btn-test-conn" onclick="testConnection()">🔌 Testa connessione</button>
+        </div>
+        <div id="conn-result" style="margin-top:12px;font-size:13px;display:none"></div>
       </div>
 
       <div class="section-card">
@@ -922,6 +936,11 @@ function setBroadcastMode(mode) {
   document.getElementById('toggle-template').classList.toggle('active', mode === 'template');
   document.getElementById('bc-text-section').style.display = mode === 'text' ? '' : 'none';
   document.getElementById('bc-template-section').style.display = mode === 'template' ? '' : 'none';
+  // Carica automaticamente i template al primo switch
+  if (mode === 'template') {
+    const sel = document.getElementById('bc-template-select');
+    if (sel.options.length <= 1) loadTemplates();
+  }
 }
 
 function selectAllRecipients(val) {
@@ -1078,10 +1097,82 @@ function copyWebhook(el) {
 
 function checkStatus() {
   fetch('/api/config').then(r => r.json()).then(cfg => {
-    const ok = !!(cfg.phoneNumberId && cfg.accessToken && !cfg.accessToken.includes('••••••••'));
+    // hasCredentials è true se token e phoneNumberId sono salvati (anche se mascherati)
+    const ok = !!(cfg.hasCredentials);
     document.getElementById('status-dot').className = 'status-dot' + (ok ? ' connected' : '');
     document.getElementById('status-label').textContent = ok ? 'Configurato' : 'Non configurato';
   });
+}
+
+async function testConnection() {
+  const btn = document.getElementById('btn-test-conn');
+  const result = document.getElementById('conn-result');
+  btn.disabled = true;
+  btn.textContent = '⏳ Test in corso...';
+  result.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/test-connection');
+    const data = await r.json();
+    result.style.display = 'block';
+    if (data.ok) {
+      result.style.color = 'var(--accent)';
+      result.innerHTML = `✅ Connesso — <strong>${esc(data.name || '')}</strong> (${esc(data.phone || '')}) · Stato: ${esc(data.status || 'ok')}`;
+      document.getElementById('status-dot').className = 'status-dot connected';
+      document.getElementById('status-label').textContent = 'Connesso';
+    } else {
+      result.style.color = 'var(--red)';
+      result.textContent = '❌ Errore: ' + (data.error || 'Credenziali non valide');
+    }
+  } catch(e) {
+    result.style.display = 'block';
+    result.style.color = 'var(--red)';
+    result.textContent = '❌ Errore di rete';
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔌 Testa connessione';
+}
+
+async function loadTemplates() {
+  const sel = document.getElementById('bc-template-select');
+  const info = document.getElementById('template-info');
+  sel.innerHTML = '<option value="">⏳ Caricamento...</option>';
+
+  try {
+    const r = await fetch('/api/templates');
+    const data = await r.json();
+    if (data.error) {
+      sel.innerHTML = '<option value="">❌ ' + esc(data.error) + '</option>';
+      return;
+    }
+    const templates = data.templates || [];
+    if (!templates.length) {
+      sel.innerHTML = '<option value="">Nessun template approvato trovato</option>';
+      info.style.display = 'block';
+      info.textContent = `Totale template: ${data.total} — nessuno in stato APPROVED`;
+      return;
+    }
+    sel.innerHTML = '<option value="">— Seleziona template —</option>' +
+      templates.map(t => `<option value="${esc(t.name)}|${esc(t.language)}">${esc(t.name)} (${esc(t.language)}) · ${esc(t.category)}</option>`).join('');
+    info.style.display = 'block';
+    info.textContent = `${templates.length} template approvati su ${data.total} totali`;
+    toast(`${templates.length} template approvati caricati ✅`);
+  } catch(e) {
+    sel.innerHTML = '<option value="">— Seleziona o carica template —</option>';
+    toast('Errore caricamento template', 'err');
+  }
+}
+
+function onTemplateSelect(value) {
+  if (!value) return;
+  const [name, lang] = value.split('|');
+  document.getElementById('bc-template-name').value = name || '';
+  const langSel = document.getElementById('bc-lang');
+  // Imposta la lingua se disponibile nel select
+  for (const opt of langSel.options) {
+    if (opt.value === lang) { langSel.value = lang; break; }
+  }
 }
 
 // ─── Utils ────────────────────────────────────────────────────────
